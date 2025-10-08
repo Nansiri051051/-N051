@@ -1,122 +1,129 @@
 <?php
 session_start();
-include 'config.php';
+require_once 'config.php';
 
-$action = $_GET['action'] ?? 'list';
+$error = '';
 $message = '';
+$tablename = "tb_664230051"; 
+$data = []; 
+$filterStudents = []; 
 
-if (isset($_GET['message'])) {
-    $message = htmlspecialchars($_GET['message']);
-}
-
-// ------------------------------------
-// 1. ส่วนจัดการ POST (เพิ่ม/แก้ไข)
-// ------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['add_student']) || isset($_POST['edit_student']))) {
-    $id = $_POST['id'];
-    $name = $_POST['name'];
-    $lastname = $_POST['lastname'];
-    $email = $_POST['email'];
-    $tel = $_POST['tel'];
+    $id = trim($_POST['id']);
+    $name = trim($_POST['name']); 
+    $lastname = trim($_POST['lastname']);
+    $email = trim($_POST['email']);
+    $tel = trim($_POST['tel']);
     $age = (int)$_POST['age'];
 
-    if (isset($_POST['add_student'])) {
-        // SQL INSERT ที่ใช้ Backticks (`) แก้ปัญหา Unknown column แล้ว
-        $sql = "INSERT INTO $tablename (`ID`, `Name`, `Lastname`, `Age`, `Email`, `Tel`) 
-                VALUES (?, ?, ?, ?, ?, ?)";
-        $stmt = $conn->prepare($sql);
-        
-        if ($stmt->execute([$id, $name, $lastname, $age, $email, $tel])) {
-            $message = 'เพิ่มนักศึกษาใหม่สำเร็จแล้ว';
-        } else {
-            $message = 'Error: เพิ่มข้อมูลไม่สำเร็จ';
-        }
-    } elseif (isset($_POST['edit_student'])) {
-        $no = (int)$_POST['edit_no'];
-        // SQL UPDATE ที่ใช้ Backticks (`) แก้ปัญหา Unknown column แล้ว
-        $sql = "UPDATE $tablename SET 
-                `ID` = ?, 
-                `Name` = ?, 
-                `Lastname` = ?, 
-                `Age` = ?, 
-                `Email` = ?, 
-                `Tel` = ? 
-                WHERE `No` = ?";
+    try {
+        if (isset($_POST['add_student'])) {
+            $sql = "INSERT INTO `$tablename` (`ID`, `fName`, `lName`, `Age`, `Email`, `Tel`) 
+                     VALUES (?, ?, ?, ?, ?, ?)";
+            $stmt = $conn->prepare($sql);
+            
+            if ($stmt->execute([$id, $name, $lastname, $age, $email, $tel])) {
+                $message = 'เพิ่มนักศึกษาใหม่สำเร็จแล้ว';
+            } else {
+                $error = 'Error: เพิ่มข้อมูลไม่สำเร็จ';
+            }
+        } elseif (isset($_POST['edit_student'])) {
+            $no = (int)$_POST['edit_no'];
+            $sql = "UPDATE `$tablename` SET 
+                    `ID` = ?, 
+                    `fName` = ?, 
+                    `lName` = ?, 
+                    `Age` = ?, 
+                    `Email` = ?, 
+                    `Tel` = ? 
+                    WHERE `No` = ?";
 
-        $stmt = $conn->prepare($sql);
-        if ($stmt->execute([$id, $name, $lastname, $age, $email, $tel, $no])) {
-            $message = 'แก้ไขข้อมูลนักศึกษาสำเร็จแล้ว';
-        } else {
-            $message = 'Error: แก้ไขข้อมูลไม่สำเร็จ';
+            $stmt = $conn->prepare($sql);
+            if ($stmt->execute([$id, $name, $lastname, $age, $email, $tel, $no])) {
+                $message = 'แก้ไขข้อมูลนักศึกษาสำเร็จแล้ว';
+            } else {
+                $error = 'Error: แก้ไขข้อมูลไม่สำเร็จ';
+            }
         }
+    } catch (PDOException $e) {
+        $error = "Database Error (POST): " . $e->getMessage();
     }
     
-    header('Location: ' . strtok($_SERVER["REQUEST_URI"], '?') . '?message=' . urlencode($message));
+    header('Location: index.php?message=' . urlencode($message) . '&error=' . urlencode($error));
     exit();
 }
 
-// ------------------------------------
-// 2. ส่วนจัดการลบข้อมูล
-// ------------------------------------
-if ($action === 'delete' && isset($_GET['no'])) {
-    $delete_no = (int)$_GET['no'];
-    $sql = "DELETE FROM $tablename WHERE `No` = ?";
+try {
+    $sql = "SELECT `No`, `ID`, `fName`, `lName`, `Age`, `Email`, `Tel`, `Created At` FROM `$tablename`";
     $stmt = $conn->prepare($sql);
-    
-    if ($stmt->execute([$delete_no])) {
-        $message = 'ลบนักศึกษาสำเร็จแล้ว!';
-    } else {
-        $message = 'Error: ลบข้อมูลไม่สำเร็จ';
+    $stmt->execute();
+    $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $filterStudents = $data;
+    if (isset($_POST['filter_id']) && !empty($_POST['filter_id'])) {
+        $filterID = $_POST['filter_id'];
+        
+        $filterStudents = array_filter($data, function($student) use ($filterID) {
+            return isset($student['ID']) && $student['ID'] == $filterID;
+        });
+        $filterStudents = array_values($filterStudents);
     }
-    header('Location: ' . strtok($_SERVER["REQUEST_URI"], '?') . '?message=' . urlencode($message));
-    exit();
+    
+    if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['no'])) {
+        $delete_no = (int)$_GET['no'];
+        $sql_delete = "DELETE FROM `$tablename` WHERE `No` = ?";
+        $stmt_delete = $conn->prepare($sql_delete);
+        
+        if ($stmt_delete->execute([$delete_no])) {
+            $message = 'ลบนักศึกษาสำเร็จแล้ว!';
+        } else {
+            $error = 'Error: ลบข้อมูลไม่สำเร็จ';
+        }
+        header('Location: index.php?message=' . urlencode($message) . '&error=' . urlencode($error));
+        exit();
+    }
+
+
+} catch (PDOException $e) {
+    $error = "Database Error (SELECT): " . $e->getMessage();
+    $filterStudents = []; 
 }
 
-// ------------------------------------
-// 3. ส่วนแสดงรายการ (บรรทัดที่เคยเกิด Error 92/97/98)
-// ------------------------------------
-$filterStudents = [];
-$current_filter_age = '';
-$where_clause = '';
-$params = [];
-
-if (isset($_POST['filter_age']) && !empty($_POST['filter_age'])) {
-    $filterAge = (int)$_POST['filter_age'];
-    $current_filter_age = $filterAge;
-    $where_clause = "WHERE `Age` = ?";
-    $params[] = $filterAge;
+if (isset($_GET['message']) && !empty($_GET['message'])) {
+    $message = htmlspecialchars($_GET['message']);
 }
-
-// SQL SELECT ที่ใช้ Backticks (`) แก้ปัญหา Unknown column แล้ว
-$sql_select = "SELECT 'No', 'ID', 'Name', 'Lastname', 'Age', 'Email', 'Tel', 'Created At' FROM $tablename $where_clause ORDER BY 'No' ASC";
-$stmt = $conn->prepare($sql_select);
-$stmt->execute($params);
-$filterStudents = $stmt->fetchAll();
+if (isset($_GET['error']) && !empty($_GET['error'])) {
+    $error = htmlspecialchars($_GET['error']);
+}
 
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ข้อมูลนักศึกษา</title>
+    <title>รายการนักศึกษา</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link href="https://cdn.datatables.net/2.0.8/css/dataTables.dataTables.min.css" rel="stylesheet">
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-    <script src="https://cdn.datatables.net/2.0.8/js/dataTables.min.js"></script>
     <style>
         .container { max-width: 1000px; }
         .dataTables_wrapper { overflow-x: auto; }
     </style>
 </head>
-
 <body>
     <div class="container mt-5">
-        <h1>ข้อมูลนักศึกษา</h1>
-        
+        <h1>รายการนักศึกษา</h1>
         <?php if ($message) : ?>
             <div class="alert alert-success alert-dismissible fade show" role="alert">
                 <?= $message ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endif; ?>
+        <?php if ($error) : ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <?= $error ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         <?php endif; ?>
@@ -127,25 +134,23 @@ $filterStudents = $stmt->fetchAll();
             </svg>
             เพิ่มนักศึกษา
         </a>
-        
+
         <hr>
 
-        <form action="" method="POST" class="mb-4">
+        <form action="index.php" method="POST" class="mb-4">
             <div class="input-group">
-                <input type="number" name="filter_age" placeholder="กรอกอายุเพื่อกรองข้อมูล" class="form-control" value="<?= $current_filter_age ?>">
-                <button type="submit" class="btn btn-primary">Filter</button>
-                <a href="?action=list" class="btn btn-danger">Clear Filter</a>
+                <input type="text" name="filter_id" placeholder="กรอกรหัส ID เพื่อกรองข้อมูล" class="form-control" value="<?= $_POST['filter_id'] ?? '' ?>">
+                <button type="submit" class="btn btn-primary">Filter ID</button>
+                <a href="index.php" class="btn btn-danger">Clear Filter</a>
             </div>
-        </form>
-        
+        </form>    
         <hr>
-
         <table id="studentTable" class="table table-striped table-bordered">
             <thead>
                 <tr>
-                    <th>No</th>
+                    <th>#</th>
                     <th>ID</th>
-                    <th>Name</th>
+                    <th>Name</th> 
                     <th>Lastname</th>
                     <th>Age</th>
                     <th>Email</th>
@@ -155,36 +160,36 @@ $filterStudents = $stmt->fetchAll();
                 </tr>
             </thead>
             <tbody>
+                <?php $i = 1; ?>
                 <?php foreach ($filterStudents as $student) : ?>
                     <tr>
-                        <td><?= $student["No"] ?></td>
-                        <td><?= $student["ID"] ?></td>
-                        <td><?= $student["Name"] ?></td>
-                        <td><?= $student["Lastname"] ?></td>
-                        <td><?= $student["Age"] ?></td>
-                        <td><?= $student["Email"] ?></td>
-                        <td><?= $student["Tel"] ?></td>
-                        <td><?= $student["Created At"] ?></td>
+                        <td><?= $i++ ?></td>
+                        <td><?= htmlspecialchars($student["ID"] ?? '') ?></td>
+                        <td><?= htmlspecialchars($student["fName"] ?? '') ?></td> 
+                        <td><?= htmlspecialchars($student["lName"] ?? '') ?></td> 
+                        <td><?= htmlspecialchars($student["Age"] ?? '') ?></td>
+                        <td><?= htmlspecialchars($student["Email"] ?? '') ?></td>
+                        <td><?= htmlspecialchars($student["Tel"] ?? '') ?></td>
+                        <td><?= htmlspecialchars($student["Created At"] ?? '') ?></td>
                         <td>
-                            <a href="adduser.php?action=edit&no=<?= $student["No"] ?>" class="btn btn-sm btn-warning">แก้ไข</a>
-                            <a href="?action=delete&no=<?= $student["No"] ?>" 
+                            <a href="edit_user.php?no=<?= $student["No"] ?? '' ?>" class="btn btn-sm btn-warning">แก้ไข</a>
+                            <a href="index.php?action=delete&no=<?= $student["No"] ?? '' ?>" 
                                 class="btn btn-sm btn-danger" 
-                                onclick="return confirm('คุณต้องการลบข้อมูลนักศึกษา <?= $student['Name'] ?> ใช่หรือไม่?');">ลบ</a>
+                                onclick="return confirm('คุณต้องการลบข้อมูลนักศึกษา <?= $student['fName'] ?? 'นี้' ?> ใช่หรือไม่?');">ลบ</a>
                         </td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
         
-        <?php if (empty($filterStudents) && isset($_POST['filter_age'])) : ?>
-            <div class="alert alert-info">ไม่พบนักศึกษาที่มีอายุ <?= $current_filter_age ?> ปี</div>
-        <?php elseif (empty($filterStudents)) : ?>
+        <?php if (empty($data) && empty($_POST['filter_id'])) : ?>
             <div class="alert alert-info">ยังไม่มีข้อมูลนักศึกษาในระบบ</div>
         <?php endif; ?>
 
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.datatables.net/2.0.8/js/dataTables.min.js"></script>
     <script>
         $(document).ready(function() {
             let table = new DataTable('#studentTable');
